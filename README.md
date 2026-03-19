@@ -4,7 +4,7 @@
 
 ## 在线使用
 
-**https://junxuezha1.github.io/do-not-behind-this-world/**
+**https://junxuezha1.github.io/do-not-behind/**
 
 手机浏览器打开后，点击「添加到主屏幕」可像 APP 一样使用。
 
