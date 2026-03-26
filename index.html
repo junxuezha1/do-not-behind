@@ -22,6 +22,8 @@
     </nav>
   </header>
 
+  <div class="build-badge" id="build-badge">版本 2026.03.26-r3</div>
+
   <!-- 主内容区 -->
   <main class="main-container">
     <!-- 左侧：输入区 -->
@@ -54,6 +56,16 @@
 
     <!-- 右侧：结果区 -->
     <section class="result-section">
+      <div id="welcome-panel" class="welcome-panel">
+        <h2>三步上手</h2>
+        <ol>
+          <li>粘贴卦盘文本，点击“解析卦盘”</li>
+          <li>在“基本信息/应期”查看规则结果</li>
+          <li>需要 AI 时点击“AI 断卦”（本地启动后端可用）</li>
+        </ol>
+        <div class="welcome-tip">提示：在线版可直接解析与归档，AI 取决于后端服务是否可达。</div>
+      </div>
+
       <!-- 卦盘展示 -->
       <div id="gua-display" class="gua-display hidden">
         <div class="section-header">卦盘</div>
@@ -110,7 +122,9 @@
   <script src="js/app-bundle.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(() => {
+        navigator.serviceWorker.getRegistration().then(r => r && r.update());
+      }).catch(() => {});
     }
   </script>
 </body>

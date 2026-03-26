@@ -1646,8 +1646,23 @@ function switchTab(tabName) {
 }
 
 function toggleModal(id, show) { $(id).classList.toggle('hidden', !show); }
-function showResults() { $('gua-display').classList.remove('hidden'); $('report-section').classList.remove('hidden'); $('archive-section').classList.remove('hidden'); }
-function hideResults() { $('gua-display').classList.add('hidden'); $('report-section').classList.add('hidden'); $('archive-section').classList.add('hidden'); currentParsed=null; currentReport=null; currentAiResult=''; }
+function showResults() {
+  $('gua-display').classList.remove('hidden');
+  $('report-section').classList.remove('hidden');
+  $('archive-section').classList.remove('hidden');
+  const welcome = $('welcome-panel');
+  if (welcome) welcome.classList.add('hidden');
+}
+function hideResults() {
+  $('gua-display').classList.add('hidden');
+  $('report-section').classList.add('hidden');
+  $('archive-section').classList.add('hidden');
+  const welcome = $('welcome-panel');
+  if (welcome) welcome.classList.remove('hidden');
+  currentParsed=null;
+  currentReport=null;
+  currentAiResult='';
+}
 
 function simpleMarkdown(text) {
   if (!text) return '';
