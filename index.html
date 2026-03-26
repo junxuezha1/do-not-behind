@@ -19,6 +19,7 @@
     <div class="logo">四时有序 · 六爻解卦</div>
     <nav class="top-nav">
       <button class="nav-btn" id="btn-history" title="历史归档">归档</button>
+      <button class="nav-btn" id="btn-settings" title="API 设置">设置</button>
     </nav>
   </header>
 
@@ -98,6 +99,43 @@
       </div>
     </section>
   </main>
+
+  <!-- 历史归档模态框 -->
+  <div id="modal-settings" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>API 设置（前端直连兜底）</h3>
+        <button class="modal-close" id="btn-close-settings">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Provider</label>
+          <select id="settings-provider">
+            <option value="">未选择</option>
+            <option value="openai">OpenAI</option>
+            <option value="claude">Claude</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="custom">自定义（OpenAI兼容）</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <input type="password" id="settings-apikey" placeholder="请输入 API Key">
+        </div>
+        <div class="form-group">
+          <label>模型名称（默认留空，需要你手动填）</label>
+          <input type="text" id="settings-model" placeholder="例如：gpt-4o-mini / deepseek-chat / claude-3-5-sonnet-latest">
+        </div>
+        <div class="form-group">
+          <label>Base URL（可选）</label>
+          <input type="text" id="settings-baseurl" placeholder="留空走默认地址，或填写自定义 API 地址">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" id="btn-save-settings">保存设置</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- 历史归档模态框 -->
   <div id="modal-history" class="modal hidden">

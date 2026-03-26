@@ -682,7 +682,7 @@ function buildSummary(report, p) {
 
 const AI_PROVIDERS = {
   openai: {
-    name:'OpenAI (GPT)', defaultBaseUrl:'https://api.openai.com/v1/chat/completions', defaultModel:'gpt-4o',
+    name:'OpenAI (GPT)', defaultBaseUrl:'https://api.openai.com/v1/chat/completions', defaultModel:'',
     buildHeaders(k) { return {'Content-Type':'application/json','Authorization':`Bearer ${k}`}; },
     buildBody(model,sys,usr,stream) { return {model,max_tokens:4096,stream,messages:[{role:'system',content:sys},{role:'user',content:usr}]}; },
     parseResponse(d) { return d.choices?.[0]?.message?.content||''; },
@@ -694,7 +694,7 @@ const AI_PROVIDERS = {
     },
   },
   claude: {
-    name:'Claude', defaultBaseUrl:'https://api.anthropic.com/v1/messages', defaultModel:'claude-sonnet-4-20250514',
+    name:'Claude', defaultBaseUrl:'https://api.anthropic.com/v1/messages', defaultModel:'',
     buildHeaders(k) { return {'Content-Type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}; },
     buildBody(model,sys,usr,stream) { return {model,max_tokens:4096,stream,system:sys,messages:[{role:'user',content:usr}]}; },
     parseResponse(d) { return d.content?.[0]?.text||''; },
@@ -704,7 +704,7 @@ const AI_PROVIDERS = {
     },
   },
   deepseek: {
-    name:'DeepSeek', defaultBaseUrl:'https://api.deepseek.com/v1/chat/completions', defaultModel:'deepseek-chat',
+    name:'DeepSeek', defaultBaseUrl:'https://api.deepseek.com/v1/chat/completions', defaultModel:'',
     buildHeaders(k) { return {'Content-Type':'application/json','Authorization':`Bearer ${k}`}; },
     buildBody(model,sys,usr,stream) { return {model,max_tokens:4096,stream,messages:[{role:'system',content:sys},{role:'user',content:usr}]}; },
     parseResponse(d) { return d.choices?.[0]?.message?.content||''; },
@@ -768,7 +768,7 @@ ${summary}
 }
 
 const aiConfig = {
-  activeProvider: 'openai',
+  activeProvider: '',
   providers: { openai:{apiKey:'',model:'',baseUrl:''}, claude:{apiKey:'',model:'',baseUrl:''}, deepseek:{apiKey:'',model:'',baseUrl:''}, custom:{apiKey:'',model:'',baseUrl:''} },
 };
 
@@ -827,6 +827,16 @@ function loadAIConfig() {
 function saveAIConfig() { localStorage.setItem('liuguang_ai_config', JSON.stringify(aiConfig)); }
 
 async function streamAIAnalyze(summary, rawText, onChunk, onDone, onError) {
+  const tryDirectFallback = async (backendMsg) => {
+    const pn = aiConfig.activeProvider;
+    const pc = aiConfig.providers[pn] || {};
+    if (!pn || !pc.apiKey) {
+      throw new Error(backendMsg || '后端不可用，且未配置前端 API');
+    }
+    onChunk('后端不可用，已切换为前端直连模式。\n\n');
+    await streamDirectAIAnalyze(summary, rawText, onChunk, onDone, onError);
+  };
+
   try {
     const resp = await fetch(`${API_BASE_URL}/api/ai/analyze`, {
       method: 'POST',
@@ -840,12 +850,12 @@ async function streamAIAnalyze(summary, rawText, onChunk, onDone, onError) {
         const err = await resp.json();
         if (err?.error) message = err.error;
       } catch {}
-      onError?.(message);
+      await tryDirectFallback(message);
       return;
     }
 
     if (!resp.body) {
-      onError?.('后端未返回流式内容');
+      await tryDirectFallback('后端未返回流式内容');
       return;
     }
 
@@ -883,11 +893,81 @@ async function streamAIAnalyze(summary, rawText, onChunk, onDone, onError) {
 
     onDone?.();
   } catch (err) {
-    if (location.hostname.includes('github.io')) {
-      onError?.('在线版当前未连接 AI 服务。你仍可直接使用解析、规则分析和归档功能。');
+    try {
+      await tryDirectFallback(err.message || '后端请求失败');
+      return;
+    } catch (fallbackErr) {
+      if (location.hostname.includes('github.io')) {
+        onError?.('后端不可用。请点击“设置”填写 API Key/模型后使用前端直连。');
+        return;
+      }
+      onError?.(`请求失败: ${fallbackErr.message || '未知错误'}，请确认后端可用或在设置中填写 API 参数`);
+    }
+  }
+}
+
+async function streamDirectAIAnalyze(summary, rawText, onChunk, onDone, onError) {
+  const pn = aiConfig.activeProvider;
+  const provider = AI_PROVIDERS[pn];
+  const pc = aiConfig.providers[pn] || {};
+
+  if (!provider) { onError?.('请先在设置中选择 Provider'); return; }
+  if (!pc.apiKey) { onError?.('请先在设置中填写 API Key'); return; }
+
+  const model = (pc.model || provider.defaultModel || '').trim();
+  const baseUrl = (pc.baseUrl || provider.defaultBaseUrl || '').trim();
+  if (!model) { onError?.('请先在设置中填写模型名称'); return; }
+  if (!baseUrl) { onError?.('请先在设置中填写 API 地址'); return; }
+
+  try {
+    const resp = await fetch(baseUrl, {
+      method: 'POST',
+      headers: provider.buildHeaders(pc.apiKey),
+      body: JSON.stringify(provider.buildBody(model, getAISystemPrompt(), getAIUserPrompt(summary, rawText), true)),
+    });
+
+    if (!resp.ok) {
+      const t = await resp.text();
+      onError?.(`直连 API 错误 (${resp.status}): ${t.substring(0, 200)}`);
       return;
     }
-    onError?.(`请求失败: ${err.message || '未知错误'}，请确认已通过 BAT 启动本地服务`);
+
+    if (!resp.body) {
+      const text = await resp.text();
+      try {
+        const data = JSON.parse(text);
+        const content = provider.parseResponse(data);
+        if (content) {
+          onChunk(content);
+          onDone?.();
+          return;
+        }
+      } catch {}
+      onError?.('直连 API 返回内容为空');
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const chunk = provider.parseStreamChunk(line.trim());
+        if (chunk === null) continue;
+        if (chunk) onChunk(chunk);
+      }
+    }
+
+    onDone?.();
+  } catch (err) {
+    onError?.(`直连 API 请求失败: ${err.message || '未知错误'}`);
   }
 }
 
@@ -968,8 +1048,10 @@ let currentAiResult = '';
 const $ = id => document.getElementById(id);
 
 document.addEventListener('DOMContentLoaded', () => {
+  loadAIConfig();
   ensureSessionId();
   bindEvents();
+  loadSettingsToUI();
   refreshQuotaHint();
   renderGanZhiCalendar();
 });
@@ -989,6 +1071,10 @@ function bindEvents() {
 
   on('btn-ai-analyze', 'click', handleAiAnalyze);
   on('btn-archive', 'click', handleArchive);
+  on('btn-settings', 'click', () => toggleModal('modal-settings', true));
+  on('btn-close-settings', 'click', () => toggleModal('modal-settings', false));
+  on('btn-save-settings', 'click', handleSaveSettings);
+  on('settings-provider', 'change', handleSettingsProviderChange);
 
   on('btn-history', 'click', () => { renderHistory(); toggleModal('modal-history', true); });
   on('btn-close-history', 'click', () => toggleModal('modal-history', false));
@@ -999,6 +1085,38 @@ function bindEvents() {
     modal.addEventListener('click', e => { if (e.target === modal) toggleModal(modal.id, false); });
   });
 
+}
+
+function loadSettingsToUI() {
+  if ($('settings-provider')) {
+    $('settings-provider').value = aiConfig.activeProvider || '';
+    handleSettingsProviderChange();
+  }
+}
+
+function handleSettingsProviderChange() {
+  const pn = $('settings-provider')?.value || '';
+  const pc = aiConfig.providers[pn] || {};
+  if ($('settings-apikey')) $('settings-apikey').value = pc.apiKey || '';
+  if ($('settings-model')) $('settings-model').value = pc.model || '';
+  if ($('settings-baseurl')) $('settings-baseurl').value = pc.baseUrl || '';
+}
+
+function handleSaveSettings() {
+  const pn = $('settings-provider')?.value || '';
+  aiConfig.activeProvider = pn;
+
+  if (pn) {
+    aiConfig.providers[pn] = {
+      apiKey: $('settings-apikey')?.value.trim() || '',
+      model: $('settings-model')?.value.trim() || '',
+      baseUrl: $('settings-baseurl')?.value.trim() || '',
+    };
+  }
+
+  saveAIConfig();
+  toggleModal('modal-settings', false);
+  alert('API 设置已保存');
 }
 
 function handleParse() {
